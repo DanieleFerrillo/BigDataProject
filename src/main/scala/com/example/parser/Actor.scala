@@ -4,8 +4,10 @@ case class Actor(
                   avatar_url: String,
                   display_login: String,
                   gravatar_id: String,
-                  id: BigInt,
+                  id: String,
                   login: String,
                   url: String
-                )
+                ) {
+
+}
 

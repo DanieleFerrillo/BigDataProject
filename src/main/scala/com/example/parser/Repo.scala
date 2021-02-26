@@ -1,7 +1,7 @@
 package com.example.parser
 
 case class Repo(
-                 id: BigInt,
+                 id: String,
                  name: String,
                  url: String
                )

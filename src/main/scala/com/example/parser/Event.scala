@@ -2,11 +2,11 @@ package com.example.parser
 
 case class Event(
                   actor: Actor,
-                  created_at: String,
-                  id: BigInt,
+                  created_at: java.sql.Timestamp,
+                  id: String,
                   org: String,
                   payload: Payload,
-                  public: Boolean,
+                  publicField: Boolean,
                   repo: Repo,
                   `type`:String
                 )
