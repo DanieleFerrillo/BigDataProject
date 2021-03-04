@@ -127,7 +127,6 @@ object Parser {
     //Contare il numero di «commit» per ogni «actor»;
     val dfActorCommits = dfEventWithCommit.select($"actor", count($"commit").over(Window.partitionBy($"actor")) as "ActorCommitsCounter")
     dfActorCommits.distinct().show()
-    println(dfActorCommits.distinct().count())
 
     //Contare il numero di «commit», divisi per «type» e «actor»;
     val dfTypeActorCommits = dfEventWithCommit.select($"type", $"actor", count($"commit").over(Window.partitionBy($"type", $"actor")) as "TypeActorCommitsCounter")
@@ -135,7 +134,7 @@ object Parser {
 
     //Contare il numero di «commit», divisi per «type», «actor» e «event»;
     val dfTypeActorEventCommits = dfEventWithCommit.select($"type" as "Type", $"actor" as "Actor", $"*", count($"commit").over(Window.partitionBy($"Type", $"Actor", $"actor", $"created_at", $"id", $"org", $"payload", $"publicField", $"repo", $"type")) as "TypeActorEventCommitsCounter")
-    dfTypeActorEventCommits.distinct().show() //TODO da chiedere
+    dfTypeActorEventCommits.distinct().show()
 
     //Contare il numero di «commit», divisi per «type», «actor» e secondo;
     val dfTypeActorSecondCommits = dfEventWithCommitAndSecond.select($"type", $"actor", $"second", count($"commit").over(Window.partitionBy($"type", $"actor", $"second")) as "TypeActorSecondCounter")
@@ -317,78 +316,68 @@ object Parser {
 */
 
 
-    //TODO chiedere come lavorare con i singoli commit da rdd
-    //Errors: org.apache.spark.SparkException: Cannot use map-side combining with array keys
-    //java.lang.NullPointerException
+    val rddWithCommitNotNull = jsonRdd.filter(x => x.payload.commits != null)
 
-    val test = jsonRdd.map(x=>x.payload.commits.foreach(x=>x) != null)
-    //test.foreach(println)
-
-    //VERSIONE SOPRA LAVORA CON ARRAY DI COMMIT, QUELLA SOTTO LAVORA CON DF E TRASFORMA IN RDD
+/*
     //Contare il numero di «commit»;
-    val nCommit = jsonRdd.map(x=>x.payload.commits)
-    //println(nCommit.count())
-
-    //println(dfEventWithCommit.rdd.count())
-
+    val rddCommit = rddWithCommitNotNull.map(x => x.payload.commits).flatMap(x => x)
+    println(rddCommit.count())
 
     //Contare il numero di «commit» per ogni «actor»;
-    val nCommitActor = jsonRdd.map(x => (x.actor, x.payload.commits)).groupByKey().map(x => (x._1, x._2.size))
-    //nCommitActor.take(20).foreach(println)
-
-    val rddActorCommits = dfEventWithCommit.select($"actor", count($"commit").over(Window.partitionBy($"actor")) as "ActorCommitsCounter").distinct().rdd
-    //rddActorCommits.take(20).foreach(println)
-
+    val rddActorCommits = rddWithCommitNotNull.map(x => (x.actor, x.payload.commits))
+      .groupByKey().map(x => (x._1, x._2.flatten.size))
+    rddActorCommits.take(20).foreach(println)
 
     //Contare il numero di «commit», divisi per «type» e «actor»;
-    val nCommitTypeActor = jsonRdd.map(x => ((x.actor, x.`type`), x.payload.commits)).groupByKey().map(x => (x._1, x._2.size))
-    //nCommitTypeActor.take(20).foreach(println)
-
-    val rddTypeActorCommits = dfEventWithCommit.select($"type", $"actor", count($"commit").over(Window.partitionBy($"type", $"actor")) as "TypeActorCommitsCounter").distinct().rdd
-    //rddTypeActorCommits.take(20).foreach(println)
-
+    val rddTypeActorCommits = rddWithCommitNotNull.map(x => ((x.`type`, x.actor), x.payload.commits))
+      .groupByKey().map(x => (x._1, x._2.flatten.size))
+    rddTypeActorCommits.take(20).foreach(println)
 
     //Contare il numero di «commit», divisi per «type», «actor» e «event»;
-    val nCommitTypeActorEvent = jsonRdd.map(x => ((x.`type`, x.actor, x), x.payload.commits)).groupByKey().map(x => (x._1, x._2.size))
-    //nCommitTypeActorEvent.take(20).foreach(println)
-
-    val rddTypeActorEventCommits = dfEventWithCommit.select($"type" as "Type", $"actor" as "Actor", $"*", count($"commit")
-      .over(Window.partitionBy($"Type", $"Actor", $"actor", $"created_at", $"id", $"org", $"payload", $"publicField", $"repo", $"type")) as "TypeActorEventCommitsCounter")
-        .distinct().rdd
-    //rddTypeActorEventCommits.take(20).foreach(println)
-
+    val rddTypeActorEventCommits = rddWithCommitNotNull.map(x => ((x.`type`, x.actor, x), x.payload.commits))
+      .groupByKey().map(x => (x._1, x._2.flatten.size))
+    rddTypeActorEventCommits.take(20).foreach(println)
 
     //Contare il numero di «commit», divisi per «type», «actor» e secondo;
-    val nCommitTypeActorSecond = jsonRdd.map(x => ((x.`type`, x.actor, new DateTime(x.created_at.getTime).getSecondOfMinute), x.payload.commits)).groupByKey().map(x => (x._1, x._2.size))
-    //nCommitTypeActorSecond.take(20).foreach(println)
+    val rddTypeActorSecondCommits = rddWithCommitNotNull.map(x => ((x.`type`, x.actor, new DateTime(x.created_at.getTime).getSecondOfMinute), x.payload.commits))
+      .groupByKey().map(x => (x._1, x._2.flatten.size))
+    rddTypeActorSecondCommits.take(20).foreach(println)
 
-    val rddTypeActorSecondCommits = dfEventWithCommitAndSecond.select($"type", $"actor", $"second", count($"commit")
-      .over(Window.partitionBy($"type", $"actor", $"second")) as "TypeActorSecondCounter").distinct().rdd
-    //rddTypeActorSecondCommits.take(20).foreach(println)
+    //Trovare il massimo/minimo numero di «commit» per secondi;
+    val rddNumCommitXSecond = rddWithCommitNotNull.map(x => (new DateTime(x.created_at.getTime).getSecondOfMinute, x.payload.commits))
+      .groupByKey().map(x => (x._1, x._2.flatten.size)).reduceByKey(_ + _).map(x => (x._2, x._1))
+    println(rddNumCommitXSecond.max())
+    println(rddNumCommitXSecond.min())
 
+    //Trovare il massimo/minimo numero di «commit» per «actor»;
+    val rddNumCommitXActor = rddActorCommits.reduceByKey(_ + _).map(x => (x._2, x._1.toString))
+    println(rddNumCommitXActor.max())
+    println(rddNumCommitXActor.min())
 
-    //TODO Trovare il massimo/minimo numero di «commit» per secondi;
-    val rddNumCommitXSecond = jsonRdd.distinct().map(x => ((new DateTime(x.created_at.getTime).getSecondOfMinute), x.payload.commits.foreach(x=>x)))
-      .reduceByKey(_ + _.toString).map(x => (x._2, x._1))
-    //println(rddNumCommitXSecond.max())
-    //println(rddNumCommitXSecond.min())
+    //Trovare il massimo/minimo numero di «commit» per «repo»;
+    val rddNumCommitXRepo = rddWithCommitNotNull.map(x => (x.repo, x.payload.commits))
+      .groupByKey().map(x => (x._1, x._2.flatten.size)).reduceByKey(_ + _).map(x => (x._2, x._1.toString))
+    println(rddNumCommitXRepo.max())
+    println(rddNumCommitXRepo.min())
 
-    //TODO Trovare il massimo/minimo numero di «commit» per «actor»;
-    val rddNumCommitXActor = jsonRdd.map(x=>(x.actor, x.payload.commits.foreach(_.toString)))
-      .groupByKey().map(x => (x._2, x._1.toString))
-    //println(rddNumCommitXActor.max())
-    //println(rddNumCommitXActor.min()
+    //Trovare il massimo/minimo numero di «commit» per secondo per «actor»;
+    val rddNumCommitXSecondActor = rddWithCommitNotNull.map(x => ((new DateTime(x.created_at.getTime).getSecondOfMinute, x.actor), x.payload.commits))
+      .groupByKey().map(x => (x._1, x._2.flatten.size)).reduceByKey(_ + _).map(x => (x._2, x._1.toString))
+    println(rddNumCommitXSecondActor.max())
+    println(rddNumCommitXSecondActor.min())
 
-    //TODO Trovare il massimo/minimo numero di «commit» per «repo»;
-    val rddNumCommitXRepo = jsonRdd.map(x=>(new DateTime(x.created_at.getTime).getSecondOfMinute, x.payload.commits.size))
-      .groupByKey().map(x => (x._2, x._1))
-    //println(rddNumCommitXRepo.max())
-    //println(rddNumCommitXRepo.min())
+    //Trovare il massimo/minimo numero di «commit» per secondo per «repo»;
+    val rddNumCommitXSecondRepo = rddWithCommitNotNull.map(x => ((new DateTime(x.created_at.getTime).getSecondOfMinute, x.repo), x.payload.commits))
+      .groupByKey().map(x => (x._1, x._2.flatten.size)).reduceByKey(_ + _).map(x => (x._2, x._1.toString))
+    println(rddNumCommitXSecondRepo.max())
+    println(rddNumCommitXSecondRepo.min())
 
-    //TODO Trovare il massimo/minimo numero di «commit» per secondo per «actor»;
-    //TODO Trovare il massimo/minimo numero di «commit» per secondo per «repo»;
-    //TODO Trovare il massimo/minimo numero di «commit» per secondo per «repo» e «actor»;
-
+    //Trovare il massimo/minimo numero di «commit» per secondo per «repo» e «actor»;
+    val rddNumCommitXSecondRepoActor = rddWithCommitNotNull.map(x => ((new DateTime(x.created_at.getTime).getSecondOfMinute, x.repo, x.actor), x.payload.commits))
+      .groupByKey().map(x => (x._1, x._2.flatten.size)).reduceByKey(_ + _).map(x => (x._2, x._1.toString))
+    println(rddNumCommitXSecondRepoActor.max())
+    println(rddNumCommitXSecondRepoActor.min())
+*/
 
 
 /*
